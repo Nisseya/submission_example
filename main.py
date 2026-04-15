@@ -12,14 +12,14 @@ app = FastAPI()
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto",
 )
 
 
 class ChatRequest(BaseModel):
     message: str
-    schema: dict
+    tables: dict
 
 
 class ChatResponse(BaseModel):
@@ -43,18 +43,16 @@ def health():
 
 
 @app.post("/chat", response_model=ChatResponse)
+@torch.inference_mode()
 def chat(payload: ChatRequest) -> ChatResponse:
     messages = [
         {
             "role": "system",
             "content": (
-                "You generate only valid Python Polars code.\n"
-                "Return code only.\n"
-                "Do not use markdown fences.\n"
-                "Assume the benchmark executor already provides dataset paths and executes the code.\n"
-                "Always assign the final Polars DataFrame to a variable named result.\n"
-                "Use Polars idioms and prefer concise, correct code.\n"
-                f"Available datasets:\n{json.dumps(payload.schema, ensure_ascii=False)}"
+                "Return only valid Python Polars code. "
+                "No markdown fences. "
+                "Assign the final Polars DataFrame to `result`. "
+                f"Available datasets: {json.dumps(payload.tables, ensure_ascii=False)}"
             ),
         },
         {
@@ -73,11 +71,11 @@ def chat(payload: ChatRequest) -> ChatResponse:
 
     outputs = model.generate(
         **inputs,
-        max_new_tokens=384,
+        max_new_tokens=256,
         do_sample=False,
-        temperature=None,
-        top_p=None,
         pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        use_cache=True,
     )
 
     response = tokenizer.decode(
